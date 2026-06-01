@@ -67,7 +67,7 @@ class EquipmentController extends Controller
     {
         try {
             $model = Equipment::findOrFail($equipment);
-            $model->update($request->validated());
+            $model->update(array_filter($request->validated(), fn($value) => $value !== null));
             $model->load(['category', 'images', 'equipmentStatus']);
 
             return response()->json([

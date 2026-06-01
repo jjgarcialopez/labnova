@@ -19,6 +19,13 @@ class CheckPermission
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
+        if (!$user->role) {
+            return response()->json([
+                'message' => 'El usuario no tiene un rol asignado.',
+                'error' => 'ROLE_NOT_ASSIGNED'
+            ], 403);
+        }
+
         // Super Admin tiene acceso a todo
         if ($user->role->name === 'Super Admin') {
             return $next($request);

@@ -65,6 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('reservations')->group(function () {
         // Ver disponibilidad de equipos (público para autenticados)
         Route::get('/availability', [ReservationController::class, 'availability']);
+        Route::get('/next-available', [ReservationController::class, 'nextAvailable']);
 
         // Crear reserva (cualquier usuario autenticado pero validado en controller)
         Route::post('/', [ReservationController::class, 'store'])->middleware('permission:reservations,create');

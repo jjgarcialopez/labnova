@@ -77,4 +77,16 @@ export const reservationService = {
     })
     return response.data.available
   },
+
+  // GET /reservations/next-available
+  getNextAvailable: async (equipmentId: number): Promise<{
+    is_available_now: boolean
+    next_available: { date: string; time: string; duration_minutes: number }
+    reserved_until: string | null
+  }> => {
+    const response = await apiClient.get('/reservations/next-available', {
+      params: { equipment_id: equipmentId },
+    })
+    return response.data
+  },
 }

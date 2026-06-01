@@ -64,20 +64,42 @@ const toDateTime = (date: string, hour: string) => {
   return new Date(`${date}T${hour}:00`).toISOString()
 }
 
-/** Opciones de tiempo cada 30 min: 07:00 → 20:30 */
-const TIME_OPTIONS = Array.from({ length: 28 }, (_, i) => {
-  const totalMins = 7 * 60 + i * 30
+/** Opciones de tiempo cada 15 min: 07:00 → 22:00 */
+const TIME_OPTIONS = Array.from({ length: 61 }, (_, i) => {
+  const totalMins = 7 * 60 + i * 15
   const h = String(Math.floor(totalMins / 60)).padStart(2, '0')
   const m = String(totalMins % 60).padStart(2, '0')
   return `${h}:${m}`
 })
 
+const getAvailableTimeOptions = (selectedDate: string): string[] => {
+  const today = new Date().toISOString().split('T')[0]
+  const isToday = selectedDate === today
+
+  if (!isToday) return TIME_OPTIONS
+
+  const now = new Date()
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+  return TIME_OPTIONS.filter(time => time > currentTime)
+}
+
 // ─── Image helpers ────────────────────────────────────────────────────────────
 
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/api\/?$/, '')
+
+const normalizeImageUrl = (url?: string | null): string | null => {
+  if (!url) return null
+  if (/^https?:\/\//i.test(url)) return url
+  return `${API_ORIGIN}${url.startsWith('/') ? url : `/${url}`}`
+}
+
 const getEquipmentImage = (eq: Equipment): string | null =>
-  eq.images?.find(i => i.is_primary)?.image_url
-  ?? eq.images?.[0]?.image_url
-  ?? null
+  normalizeImageUrl(
+    eq.images?.find(i => i.is_primary)?.image_url
+    ?? eq.images?.[0]?.image_url
+    ?? null
+  )
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
@@ -123,6 +145,13 @@ const ReservationsPage: React.FC = () => {
   const [availabilityStatus, setAvailabilityStatus] =
     useState<'unknown' | 'checking' | 'available' | 'unavailable' | 'past'>('unknown')
   const availabilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [equipmentAvailability, setEquipmentAvailability] = useState<{
+    is_available_now: boolean
+    next_available: { date: string; time: string; duration_minutes: number }
+    reserved_until: string | null
+  } | null>(null)
+  const [checkingEquipmentAvailability, setCheckingEquipmentAvailability] = useState(false)
 
   const [rejectModal,   setRejectModal]   = useState<{ id: number } | null>(null)
   const [rejectReason,  setRejectReason]  = useState('')
@@ -214,6 +243,49 @@ const ReservationsPage: React.FC = () => {
       if (availabilityTimer.current) clearTimeout(availabilityTimer.current)
     }
   }, [form.equipment_id, form.start_date, form.start_hour, form.end_date, form.end_hour])
+
+  // ── Equipment availability check ───────────────────────────────────────────
+
+  useEffect(() => {
+    if (!form.equipment_id) {
+      setEquipmentAvailability(null)
+      return
+    }
+
+    const fetchAvailability = async () => {
+      try {
+        setCheckingEquipmentAvailability(true)
+        const data = await reservationService.getNextAvailable(Number(form.equipment_id))
+        setEquipmentAvailability(data)
+
+        // Auto-fill date and hour if equipment is available
+        if (data.is_available_now) {
+          const now = new Date()
+          const dateStr = now.toISOString().split('T')[0]
+          const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')
+          setForm(prev => ({
+            ...prev,
+            start_date: dateStr,
+            start_hour: timeStr,
+            end_hour: String((now.getHours() + 1) % 24).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
+          }))
+        } else if (data.next_available) {
+          setForm(prev => ({
+            ...prev,
+            start_date: data.next_available.date,
+            start_hour: data.next_available.time,
+            end_hour: String(parseInt(data.next_available.time.split(':')[0]) + 1).padStart(2, '0') + ':' + data.next_available.time.split(':')[1],
+          }))
+        }
+      } catch {
+        setEquipmentAvailability(null)
+      } finally {
+        setCheckingEquipmentAvailability(false)
+      }
+    }
+
+    fetchAvailability()
+  }, [form.equipment_id])
 
   // ── Filter ─────────────────────────────────────────────────────────────────
 
@@ -658,6 +730,58 @@ const ReservationsPage: React.FC = () => {
               )}
             </div>
 
+            {/* Disponibilidad del equipo */}
+            {form.equipment_id && (
+              <div>
+                {checkingEquipmentAvailability ? (
+                  <div className="flex items-center justify-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="animate-spin">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </div>
+                    <span className="text-sm text-blue-700 font-medium">Verificando disponibilidad...</span>
+                  </div>
+                ) : equipmentAvailability ? (
+                  <div className={`p-4 rounded-lg border ${
+                    equipmentAvailability.is_available_now
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-amber-50 border-amber-200'
+                  }`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        {equipmentAvailability.is_available_now ? (
+                          <>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                              <p className="text-sm font-semibold text-green-700">Disponible ahora</p>
+                            </div>
+                            <p className="text-xs text-green-600">
+                              Puedes usar este equipo a partir de ahora. La fecha y hora han sido auto-rellenadas.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                              <p className="text-sm font-semibold text-amber-700">Próximo disponible</p>
+                            </div>
+                            <p className="text-xs text-amber-600 mb-2">
+                              Próximo slot: <strong>{equipmentAvailability.next_available.date}</strong> a las{' '}
+                              <strong>{equipmentAvailability.next_available.time}</strong>
+                            </p>
+                            <p className="text-xs text-amber-600">
+                              La fecha y hora han sido auto-rellenadas con el próximo horario disponible.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
             {/* Fecha y hora de inicio */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -678,7 +802,8 @@ const ReservationsPage: React.FC = () => {
                   onChange={(e) => setForm({ ...form, start_hour: e.target.value })}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                 >
-                  {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  <option value="">Seleccionar hora...</option>
+                  {getAvailableTimeOptions(form.start_date).map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <FieldError msg={formErrors.start_date} />
@@ -704,6 +829,7 @@ const ReservationsPage: React.FC = () => {
                   onChange={(e) => setForm({ ...form, end_hour: e.target.value })}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                 >
+                  <option value="">Seleccionar hora...</option>
                   {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>

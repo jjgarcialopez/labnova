@@ -14,11 +14,19 @@ use Illuminate\Http\Request;
 use App\Models\Permission;
 use App\Models\Module;
 use App\Models\Role;
+use App\Services\RoleAccessService;
 
 class PermissionController extends Controller
 {
     public function index()
     {
+        if (! RoleAccessService::isSuperAdmin(request()->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede consultar la matriz de permisos.',
+            ], 403);
+        }
+
         try {
             $roles = Role::with([
                 'modulePermissions.module',
@@ -51,6 +59,13 @@ class PermissionController extends Controller
 
     public function getRolePermissions(Role $role)
     {
+        if (! RoleAccessService::isSuperAdmin(request()->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede consultar permisos de roles.',
+            ], 403);
+        }
+
         try {
             $permissions = $role->modulePermissions()
                 ->with(['module', 'permission'])
@@ -79,6 +94,13 @@ class PermissionController extends Controller
 
     public function assignPermissions(AssignPermissionsRequest $request, Role $role)
     {
+        if (! RoleAccessService::isSuperAdmin($request->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede modificar permisos de roles.',
+            ], 403);
+        }
+
         DB::beginTransaction();
 
         try {
@@ -167,6 +189,12 @@ class PermissionController extends Controller
         Role $role,
         Module $module
     ) {
+        if (! RoleAccessService::isSuperAdmin($request->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede modificar permisos de roles.',
+            ], 403);
+        }
 
         DB::beginTransaction();
 
@@ -224,6 +252,13 @@ class PermissionController extends Controller
 
     public function removeAllPermissions(Role $role)
     {
+        if (! RoleAccessService::isSuperAdmin(request()->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede modificar permisos de roles.',
+            ], 403);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -247,6 +282,13 @@ class PermissionController extends Controller
 
     public function removePermission(Role $role, Module $module, Permission $permission)
     {
+        if (! RoleAccessService::isSuperAdmin(request()->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede modificar permisos de roles.',
+            ], 403);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -280,6 +322,13 @@ class PermissionController extends Controller
 
     public function copyPermissions(Request $request)
     {
+        if (! RoleAccessService::isSuperAdmin($request->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede modificar permisos de roles.',
+            ], 403);
+        }
+
         try {
             $validated = $request->validate([
                 'source_role_id' => 'required|exists:roles,id',
@@ -328,6 +377,13 @@ class PermissionController extends Controller
 
     public function getPermissionMatrix()
     {
+        if (! RoleAccessService::isSuperAdmin(request()->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede consultar la matriz de permisos.',
+            ], 403);
+        }
+
         try {
             $roles = Role::all();
             $modules = Module::where('is_active', true)->orderBy('sort_order')->get();
@@ -376,6 +432,13 @@ class PermissionController extends Controller
 
     public function bulkAssignPermissions(BulkAssignPermissionsRequest $request)
     {
+        if (! RoleAccessService::isSuperAdmin($request->user())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solo el Super Admin puede modificar permisos de roles.',
+            ], 403);
+        }
+
         DB::beginTransaction();
 
         try {

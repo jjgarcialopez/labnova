@@ -218,7 +218,6 @@ class PermissionSeeder extends Seeder
             $reportRequests,
             $reports,
             $users,
-            $rolesModule,
         ], $permissionList);
 
         $assignPermissions($labManager, [

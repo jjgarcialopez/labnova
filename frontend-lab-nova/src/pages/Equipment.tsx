@@ -103,10 +103,20 @@ const ImageDropZone: React.FC<ImageDropZoneProps> = ({ preview, onFile, label = 
 
 // ─── Equipment image helper ───────────────────────────────────────────────────
 
+const API_ORIGIN = import.meta.env.VITE_API_BASE_URL
+
+const normalizeImageUrl = (url?: string | null): string | null => {
+  if (!url) return null
+  if (/^https?:\/\//i.test(url)) return url
+  return `${API_ORIGIN}${url.startsWith('/') ? url : `/${url}`}`
+}
+
 const getPrimaryImage = (eq: Equipment): string | null =>
-  eq.images?.find(i => i.is_primary)?.image_url
-  ?? eq.images?.[0]?.image_url
-  ?? null
+  normalizeImageUrl(
+    eq.images?.find(i => i.is_primary)?.image_url
+    ?? eq.images?.[0]?.image_url
+    ?? null
+  )
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -260,8 +270,12 @@ const EquipmentPage: React.FC = () => {
     const errors: Partial<Record<keyof EquipmentForm, string>> = {}
     if (!form.name.trim()) errors.name = 'El nombre es requerido'
     if (!form.code.trim()) errors.code = 'El codigo es requerido'
-    if (form.stock && isNaN(Number(form.stock))) errors.stock = 'El stock debe ser un numero'
-    if (form.stock && Number(form.stock) < 0) errors.stock = 'El stock no puede ser negativo'
+    if (!form.category_id) errors.category_id = 'La categoria es requerida'
+    if (!form.description.trim()) errors.description = 'La descripción es requerida'
+    if (!form.stock.trim()) errors.stock = 'El stock es requerido'
+    else if (isNaN(Number(form.stock))) errors.stock = 'El stock debe ser un numero'
+    else if (Number(form.stock) < 0) errors.stock = 'El stock no puede ser negativo'
+    if (!form.status) errors.status = 'El estado es requerido'
 
     // Imagen obligatoria solo al crear
     if (!editingId && !imageFile) {
@@ -297,10 +311,16 @@ const EquipmentPage: React.FC = () => {
 
       // Si hay imagen nueva, subirla
       if (imageFile) {
-        await equipmentService.uploadEquipmentImage(saved.id, imageFile)
+        saved = await equipmentService.uploadEquipmentImage(saved.id, imageFile)
       }
 
       setShowModal(false)
+      setEquipment((current) => {
+        const exists = current.some((item) => item.id === saved.id)
+        return exists
+          ? current.map((item) => item.id === saved.id ? saved : item)
+          : [saved, ...current]
+      })
       loadEquipment()
       showSuccess(editingId ? 'Equipo actualizado correctamente.' : 'Equipo registrado correctamente.')
     } catch (err: unknown) {
@@ -681,20 +701,21 @@ const EquipmentPage: React.FC = () => {
                 <input type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
                   className={cls('code')} placeholder="Ej: MIC-001" />
               )}
-              {field('Categoria', 'category_id',
+              {field('Categoria *', 'category_id',
                 <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                   className={cls('category_id')}>
-                  <option value="">Sin categoria</option>
+                  <option value="">Seleccionar categoria...</option>
                   {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                 </select>
               )}
-              {field('Stock', 'stock',
+              {field('Stock *', 'stock',
                 <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })}
                   className={cls('stock')} placeholder="Cantidad disponible" min={0} />
               )}
               {field('Estado *', 'status',
                 <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as Equipment['status'] })}
                   className={cls('status')}>
+                  <option value="">Seleccionar estado...</option>
                   <option value="available">Disponible</option>
                   <option value="maintenance">Mantenimiento</option>
                   <option value="out_of_service">Fuera de servicio</option>
@@ -714,9 +735,9 @@ const EquipmentPage: React.FC = () => {
                 </div>
               </div>
               <div className="col-span-2">
-                {field('Descripcion', 'description',
+                {field('Descripcion *', 'description',
                   <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    rows={2} className={cls('description', 'resize-none')} placeholder="Descripcion del equipo (opcional)" />
+                    rows={2} className={cls('description', 'resize-none')} placeholder="Descripcion del equipo" />
                 )}
               </div>
             </div>

@@ -14,14 +14,14 @@ class EquipmentUpdateRequest extends FormRequest
 
     public function rules(): array
     {
-        $id = $this->route('equipment');
+        $id = $this->route('id');
 
         return [
-            'category_id' => ['nullable', 'exists:categories,id'],
-            'name'        => ['required', 'string', 'max:150'],
-            'code'        => ['required', 'string', 'max:50', Rule::unique('equipment', 'code')->ignore($id)],
+            'category_id' => ['filled', 'exists:categories,id'],
+            'name'        => ['filled', 'string', 'max:150'],
+            'code'        => ['filled', 'string', 'max:50', Rule::unique('equipment', 'code')->ignore($id)],
             'description' => ['nullable', 'string'],
-            'stock'       => ['nullable', 'integer', 'min:0'],
+            'stock'       => ['filled', 'integer', 'min:0'],
             'status'      => ['nullable', 'in:available,maintenance,out_of_service'],
             'is_active'   => ['nullable', 'boolean'],
         ];

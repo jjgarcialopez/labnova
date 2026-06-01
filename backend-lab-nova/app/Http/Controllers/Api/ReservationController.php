@@ -372,6 +372,52 @@ class ReservationController extends Controller
         }
     }
 
+    public function nextAvailable(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'equipment_id' => 'required|exists:equipment,id',
+            ]);
+
+            $equipmentId = (int) $request->equipment_id;
+            $now = now()->setTimezone(config('app.timezone'));
+
+            $statusIds = ReservationStatus::whereIn('code', ['pending', 'approved'])->pluck('id')->toArray();
+
+            $nextReservation = Reservation::where('equipment_id', $equipmentId)
+                ->whereIn('reservation_status_id', $statusIds)
+                ->where('start_time', '>', $now)
+                ->orderBy('start_time', 'asc')
+                ->first();
+
+            if (!$nextReservation) {
+                return response()->json([
+                    'is_available_now' => true,
+                    'next_available' => [
+                        'date' => $now->format('Y-m-d'),
+                        'time' => $now->format('H:i'),
+                        'duration_minutes' => 60,
+                    ],
+                    'reserved_until' => null,
+                ]);
+            }
+
+            $endTime = $nextReservation->end_time;
+
+            return response()->json([
+                'is_available_now' => false,
+                'next_available' => [
+                    'date' => $endTime->format('Y-m-d'),
+                    'time' => $endTime->format('H:i'),
+                    'duration_minutes' => 60,
+                ],
+                'reserved_until' => $nextReservation->end_time->toIso8601String(),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Error al obtener disponibilidad', 'error' => $e->getMessage()], 500);
+        }
+    }
+
     /**
      * Verifica si existe alguna reserva activa que se superponga con el rango dado.
      * Cubre los 3 casos de solapamiento:

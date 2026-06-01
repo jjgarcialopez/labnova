@@ -4,6 +4,7 @@ import { userService } from '../services/userService'
 import { User } from '../types'
 import { Modal } from '../components/common/Modal'
 import { usePermissions } from '../hooks/usePermissions'
+import { useAuth } from '../hooks'
 import { ProtectedButton, IfCan } from '../components/ProtectedFeature'
 
 interface Role {
@@ -23,6 +24,7 @@ interface UserForm {
   last_name: string
   email: string
   password: string
+  confirm_password: string
   phone: string
   role_id: string
   status: string
@@ -34,6 +36,7 @@ const EMPTY_FORM: UserForm = {
   last_name: '',
   email: '',
   password: '',
+  confirm_password: '',
   phone: '',
   role_id: '',
   status: '1',
@@ -42,6 +45,8 @@ const EMPTY_FORM: UserForm = {
 
 const UsersPage: React.FC = () => {
   const { canView } = usePermissions()
+  const { user: currentUser } = useAuth()
+  const isCurrentUserSuperAdmin = currentUser?.role?.name === 'Super Admin'
 
   // Si no tiene permiso para ver usuarios, mostrar mensaje de acceso denegado
   if (!canView('users')) {
@@ -73,6 +78,8 @@ const UsersPage: React.FC = () => {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<UserForm>(EMPTY_FORM)
   const [formErrors, setFormErrors] = useState<Partial<UserForm>>({})
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const [deleting, setDeleting] = useState(false)
 
@@ -99,12 +106,16 @@ const UsersPage: React.FC = () => {
   const loadRoles = useCallback(async () => {
     try {
       const data = await userService.getGeneralData()
-      setRoles(data.roles)
+      setRoles(
+        isCurrentUserSuperAdmin
+          ? data.roles
+          : data.roles.filter((role: Role) => role.name !== 'Super Admin')
+      )
       setGenders(data.genders ?? [])
     } catch {
       // roles/genders are optional — form can still work
     }
-  }, [])
+  }, [isCurrentUserSuperAdmin])
 
   useEffect(() => {
     loadUsers()
@@ -132,22 +143,28 @@ const UsersPage: React.FC = () => {
     setEditingId(null)
     setForm(EMPTY_FORM)
     setFormErrors({})
+    setShowPassword(false)
+    setShowConfirmPassword(false)
     setShowModal(true)
   }
 
   const openEdit = (user: User) => {
+    const detail = user.userDetail ?? (user as User & { user_detail?: User['userDetail'] }).user_detail
     setEditingId(user.id)
     setForm({
       name: user.name,
       last_name: user.last_name ?? '',
       email: user.email,
       password: '',
+      confirm_password: '',
       phone: user.phone ?? '',
       role_id: user.role_id ? String(user.role_id) : (user.role?.id ? String(user.role.id) : ''),
       status: user.status === false ? '0' : '1',
-      gender_id: user.userDetail?.gender_id ? String(user.userDetail.gender_id) : '',
+      gender_id: detail?.gender_id ? String(detail.gender_id) : '',
     })
     setFormErrors({})
+    setShowPassword(false)
+    setShowConfirmPassword(false)
     setShowModal(true)
   }
 
@@ -169,8 +186,13 @@ const UsersPage: React.FC = () => {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = 'Email invalido'
     if (!editingId && !form.password.trim()) errors.password = 'La contrasena es requerida'
     else if (form.password && form.password.length < 6) errors.password = 'Minimo 6 caracteres'
+    if ((!editingId || form.password) && !form.confirm_password.trim()) {
+      errors.confirm_password = 'Confirma la contrasena'
+    } else if (form.password && form.confirm_password && form.password !== form.confirm_password) {
+      errors.confirm_password = 'Las contrasenas no coinciden'
+    }
     if (!form.role_id) errors.role_id = 'El rol es requerido'
-    if (!form.gender_id) errors.gender_id = 'El género es requerido'
+    if (!editingId && !form.gender_id) errors.gender_id = 'El género es requerido'
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -186,7 +208,9 @@ const UsersPage: React.FC = () => {
         phone: form.phone.trim() || null,
         role_id: Number(form.role_id),
         status: form.status === '1',
-        gender_id: form.gender_id ? Number(form.gender_id) : null,
+      }
+      if (!editingId || form.gender_id) {
+        payload.gender_id = form.gender_id ? Number(form.gender_id) : null
       }
       if (form.password) payload.password = form.password
 
@@ -410,7 +434,22 @@ const UsersPage: React.FC = () => {
           size="lg"
           allowBackdropClick={false}
         >
+          <div className="space-y-5">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
+              <p className="text-sm font-semibold text-blue-900">
+                {editingId ? 'Actualizar información del usuario' : 'Registrar nuevo usuario'}
+              </p>
+              <p className="text-xs text-blue-700 mt-1">
+                {editingId
+                  ? 'Modifica solo los campos necesarios. La contraseña se conserva si la dejas vacía.'
+                  : 'Completa los datos básicos y define el acceso inicial del usuario.'}
+              </p>
+            </div>
+
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Datos personales</h3>
+            </div>
             {/* Nombre */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
@@ -463,19 +502,58 @@ const UsersPage: React.FC = () => {
               {formErrors.phone && <p className="text-red-500 text-xs mt-1">{formErrors.phone}</p>}
             </div>
 
+            <div className="col-span-2 pt-2 border-t border-gray-100">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Seguridad y acceso</h3>
+            </div>
+
             {/* Contrasena */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Contrasena {editingId ? '(dejar vacio para no cambiar)' : '*'}
               </label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 ${formErrors.password ? 'border-red-400' : 'border-gray-200'}`}
-                placeholder="Minimo 6 caracteres"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className={`w-full border rounded-lg px-3 py-2 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 ${formErrors.password ? 'border-red-400' : 'border-gray-200'}`}
+                  placeholder="Minimo 6 caracteres"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute inset-y-0 right-2 text-xs font-medium text-blue-600 hover:text-blue-800"
+                  aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                >
+                  {showPassword ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
               {formErrors.password && <p className="text-red-500 text-xs mt-1">{formErrors.password}</p>}
+            </div>
+
+            {/* Confirmar Contrasena */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Confirmar contrasena {editingId ? '(si cambia)' : '*'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={form.confirm_password}
+                  onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
+                  className={`w-full border rounded-lg px-3 py-2 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 ${formErrors.confirm_password ? 'border-red-400' : 'border-gray-200'}`}
+                  placeholder="Repite la contrasena"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((value) => !value)}
+                  className="absolute inset-y-0 right-2 text-xs font-medium text-blue-600 hover:text-blue-800"
+                  aria-label={showConfirmPassword ? 'Ocultar confirmacion' : 'Mostrar confirmacion'}
+                >
+                  {showConfirmPassword ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+              {formErrors.confirm_password && <p className="text-red-500 text-xs mt-1">{formErrors.confirm_password}</p>}
             </div>
 
             {/* Rol */}
@@ -511,7 +589,7 @@ const UsersPage: React.FC = () => {
             </div>
 
             {/* Estado */}
-            <div className="col-span-2">
+            <div className="col-span-2 pt-2 border-t border-gray-100">
               <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -539,6 +617,7 @@ const UsersPage: React.FC = () => {
               </div>
             </div>
           </div>
+          </div>
 
           <div className="flex justify-end gap-3 pt-4 mt-2 border-t border-gray-100">
             <button
@@ -563,3 +642,4 @@ const UsersPage: React.FC = () => {
 }
 
 export default UsersPage
+

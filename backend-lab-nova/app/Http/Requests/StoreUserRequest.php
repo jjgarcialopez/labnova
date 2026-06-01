@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use App\Services\RoleAccessService;
 
 class StoreUserRequest extends FormRequest
 {
@@ -21,7 +22,7 @@ class StoreUserRequest extends FormRequest
             'password' => 'required|string|min:6',
             'phone' => 'nullable|string|max:20|unique:users,phone',
             'status' => 'required|boolean',
-            'role_id' => 'required|exists:roles,id',
+            'role_id' => ['required', 'exists:roles,id'],
             'gender_id' => 'nullable|exists:genders,id',
             'birthdate' => 'nullable|date',
             'address' => 'nullable|string|max:100',
